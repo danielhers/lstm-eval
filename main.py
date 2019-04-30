@@ -20,9 +20,6 @@ first_k_errors = 5
 ## Epsilon value -- output threshold (during test time)
 epsilon = 0.5
 
-# For GPU usage
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") ## GPU 
-
 def get_args ():
     parser = argparse.ArgumentParser(description='Let us train an LSTM model.')
 
@@ -41,6 +38,7 @@ def get_args ():
     parser.add_argument ('--n_epochs', type=int, default=150, help='The total number of epochs.')
     parser.add_argument ('--n_trials', type=int, default=10, help='The total number of trials.') 
     parser.add_argument ('--disp_err_n', type=int, default=5, help='The first k error values.')
+    parser.add_argument ('--gpu', type=int, default=0, help='GPU index to use if CUDA is available.')
     
     params, _ = parser.parse_known_args ()
     
@@ -90,7 +88,7 @@ def plot_graphs (lang, info, labels, accuracy_vals, loss_vals, window, filename)
         plt.savefig('./figures/{}_error_{}'.format(filename, str(err_n)),dpi=256)
     return
 
-def single_investigation (lang, distrib, h_layers, h_units, window, sample_size, n_epochs, exp_num):
+def single_investigation (lang, distrib, h_layers, h_units, window, sample_size, n_epochs, exp_num, device):
     acc_per_d = []
     loss_per_d = []
 
@@ -101,7 +99,7 @@ def single_investigation (lang, distrib, h_layers, h_units, window, sample_size,
     inputs, outputs, s_dst = generator.generate_sample (sample_size, window[0], window[1], distrib, False)
     for _ in range(exp_num):
         # inputs, outputs, s_dst = generator.generate_sample (sample_size, window[0], window[1], distrib, False)
-        e_vals, loss_vals = train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, 1) # each experiment is unique
+        e_vals, loss_vals = train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, 1, device) # each experiment is unique
         acc_per_d.append (e_vals)
         loss_per_d.append(loss_vals)
 
@@ -115,7 +113,7 @@ def single_investigation (lang, distrib, h_layers, h_units, window, sample_size,
 
     return acc_per_d, loss_vals
 
-def hidden_units_investigation (lang, distrib, h_layers, h_units, window, sample_size, n_epochs, exp_num):
+def hidden_units_investigation (lang, distrib, h_layers, h_units, window, sample_size, n_epochs, exp_num, device):
     acc_per_d = []
     loss_per_d = []
 
@@ -126,7 +124,7 @@ def hidden_units_investigation (lang, distrib, h_layers, h_units, window, sample
     inputs, outputs, s_dst = generator.generate_sample (sample_size, window[0], window[1], distrib, False)
     for hidden_dim in h_units:
         # inputs, outputs, s_dst = generator.generate_sample (sample_size, window[0], window[1], distrib, False)
-        e_vals, loss_vals = train (generator, distrib, h_layers, hidden_dim, inputs, outputs, n_epochs, exp_num)
+        e_vals, loss_vals = train (generator, distrib, h_layers, hidden_dim, inputs, outputs, n_epochs, exp_num, device)
         acc_per_d.append (e_vals)
         loss_per_d.append(loss_vals)
 
@@ -137,14 +135,14 @@ def hidden_units_investigation (lang, distrib, h_layers, h_units, window, sample
     return acc_per_d, loss_vals
 
 
-def window_investigation (lang, distrib, h_layers, h_units, windows, sample_size, n_epochs, exp_num):
+def window_investigation (lang, distrib, h_layers, h_units, windows, sample_size, n_epochs, exp_num, device):
     acc_per_d = []
     loss_per_d = []
 
     generator = SampleGenerator(lang)
     for window in windows:
         inputs, outputs, s_dst = generator.generate_sample (sample_size, window[0], window[1], distrib, False)
-        e_vals, loss_vals = train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp_num)
+        e_vals, loss_vals = train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp_num, device)
         acc_per_d.append (e_vals)
         loss_per_d.append(loss_vals)
 
@@ -155,14 +153,14 @@ def window_investigation (lang, distrib, h_layers, h_units, windows, sample_size
     return acc_per_d, loss_vals
 
 
-def distribution_investigation (lang, distribution, h_layers, h_units, window, sample_size, n_epochs, exp_num):
+def distribution_investigation (lang, distribution, h_layers, h_units, window, sample_size, n_epochs, exp_num, device):
     acc_per_d = []
     loss_per_d = []
 
     generator = SampleGenerator(lang)
     for distrib in distribution:
         inputs, outputs, s_dst = generator.generate_sample (sample_size, window[0], window[1], distrib, False)
-        e_vals, loss_vals = train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp_num)
+        e_vals, loss_vals = train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp_num, device)
         acc_per_d.append (e_vals)
         loss_per_d.append(loss_vals)
 
@@ -172,7 +170,7 @@ def distribution_investigation (lang, distribution, h_layers, h_units, window, s
 
     return acc_per_d, loss_vals
 
-def test (generator, lstm):
+def test (generator, lstm, device):
     first_errors = []
 
     with torch.no_grad():
@@ -190,7 +188,7 @@ def test (generator, lstm):
 
                 prediction = np.int_ (output.numpy()[0] >= epsilon)
 
-                actual = np.int_ ((generator.lineToTensorOutput(out[i]).to(device)).numpy()[0])
+                actual = np.int_ ((generator.lineToTensorOutput(out[i]).to(device)).cpu().numpy()[0])
 
                 if np.all(np.equal(np.array(prediction), np.array(actual))): 
                     letter_count += 1
@@ -202,7 +200,7 @@ def test (generator, lstm):
                     return first_errors
 
 
-def train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp_num):
+def train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp_num, device):
     lang = generator.get_vocab()
     vocab_size = len (lang)
     training_size = len (inputs)
@@ -240,7 +238,7 @@ def train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp
 
                 if i == training_size - 1: ## one full pass of the training set
                     loss_arr.append (total_loss) ## add loss val
-                    first_errors.append(test(generator, lstm)) ## add e_i vals
+                    first_errors.append(test(generator, lstm, device)) ## add e_i vals
 
         loss_arr_per_iter.append (loss_arr)
         first_errors_per_iter.append (first_errors)
@@ -270,14 +268,17 @@ def main(args):
     n_trials = args.n_trials
     first_k_errors = args.disp_err_n
 
+    # For GPU usage
+    device = torch.device("cuda:%d" % args.gpu if torch.cuda.is_available() else "cpu")
+
     if investigation == 'distribution':
-        distribution_investigation (lang, distrib, n_layers, n_units[0], window[0], s_size, n_epochs, n_trials)
+        distribution_investigation (lang, distrib, n_layers, n_units[0], window[0], s_size, n_epochs, n_trials, device)
     elif investigation == 'window':
-        window_investigation (lang, distrib[0], n_layers, n_units[0], window, s_size, n_epochs, n_trials)
+        window_investigation (lang, distrib[0], n_layers, n_units[0], window, s_size, n_epochs, n_trials, device)
     elif investigation == 'hidden_units':
-        hidden_units_investigation (lang, distrib[0], n_layers, n_units, window[0], s_size, n_epochs, n_trials)
+        hidden_units_investigation (lang, distrib[0], n_layers, n_units, window[0], s_size, n_epochs, n_trials, device)
     elif investigation == 'single':
-        single_investigation (lang, distrib[0], n_layers, n_units[0], window[0], s_size, n_epochs, n_trials)
+        single_investigation (lang, distrib[0], n_layers, n_units[0], window[0], s_size, n_epochs, n_trials, device)
     else:
         print ('Sorry, we couldn\'t process your input; could you please try again?')
 
