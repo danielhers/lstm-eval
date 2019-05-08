@@ -1,16 +1,15 @@
 ## Import relevant libraries and dependencies
 import argparse
-import numpy as np
+import os
 import sys
-import random
-import matplotlib
+
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
+
 from model import MyLSTM
 from sample_generator import SampleGenerator
-
 
 MAX_INT = sys.maxsize
 
@@ -57,12 +56,7 @@ def plot_graphs (lang, info, labels, accuracy_vals, loss_vals, window, filename)
     ## Uncomment the following line if you would like to bound the plot window by the maximum e_k value (Ref 1)
     # max_y = np.max(accuracy_vals) + 10
     
-    e_nums = [1, first_k_errors] 
-
-    ## Lower training threshold
-    border1 = np.ones(len(domain)) * window[0]
-    ## Upper training threshold
-    border2 = np.ones(len(domain)) * window[1]
+    e_nums = [1, first_k_errors]
 
     for err_n in e_nums:
         plt.figure ()
@@ -74,9 +68,11 @@ def plot_graphs (lang, info, labels, accuracy_vals, loss_vals, window, filename)
 
         plt.legend(loc='upper left')
 
-        if labels != 'window':
-            plt.plot (domain, border1, 'c-', label='Threshold$_1$')
-            plt.plot (domain, border2, 'c-', label='Threshold$_2$')
+        if window is not None:
+            ## Lower training threshold
+            plt.plot(domain, np.ones(len(domain)) * window[0], 'c-', label='Threshold$_1$')
+            ## Upper training threshold
+            plt.plot(domain, np.ones(len(domain)) * window[1], 'c-', label='Threshold$_2$')
 
         lang_str = '^n'.join(lang + ' ')[:-1]
 
@@ -123,6 +119,7 @@ def hidden_units_investigation (lang, distrib, h_layers, h_units, window, sample
     ## otherwise, each training set will come from the same distribution and same window but be different.
     inputs, outputs, s_dst = generator.generate_sample (sample_size, window[0], window[1], distrib, False)
     for hidden_dim in h_units:
+        print(hidden_dim)
         # inputs, outputs, s_dst = generator.generate_sample (sample_size, window[0], window[1], distrib, False)
         e_vals, loss_vals = train (generator, distrib, h_layers, hidden_dim, inputs, outputs, n_epochs, exp_num, device)
         acc_per_d.append (e_vals)
@@ -141,14 +138,17 @@ def window_investigation (lang, distrib, h_layers, h_units, windows, sample_size
 
     generator = SampleGenerator(lang)
     for window in windows:
+        print(window)
         inputs, outputs, s_dst = generator.generate_sample (sample_size, window[0], window[1], distrib, False)
         e_vals, loss_vals = train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp_num, device)
         acc_per_d.append (e_vals)
         loss_per_d.append(loss_vals)
+        np.savez('./results/result_{}_{}_{}_{}_{}.npz'.format(lang, window, distrib, h_layers, h_units),
+                 errors=np.array(e_vals), losses=np.array(loss_vals))
 
     filename = '{}_{}_{}_{}_{}'.format(lang, 'window', distrib, h_layers, h_units)
     window_label = ['Window [{}, {}]'.format(elt[0], elt[1]) for elt in windows]
-    plot_graphs (lang, 'window', window_label, acc_per_d, loss_per_d, [1, 30], filename) # [1, 30] is a random window. We'll ignore it later.
+    plot_graphs (lang, 'window', window_label, acc_per_d, loss_per_d, None, filename)
 
     return acc_per_d, loss_vals
 
@@ -159,6 +159,7 @@ def distribution_investigation (lang, distribution, h_layers, h_units, window, s
 
     generator = SampleGenerator(lang)
     for distrib in distribution:
+        print(distrib)
         inputs, outputs, s_dst = generator.generate_sample (sample_size, window[0], window[1], distrib, False)
         e_vals, loss_vals = train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp_num, device)
         acc_per_d.append (e_vals)
@@ -207,6 +208,7 @@ def train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp
 
     loss_arr_per_iter = []
     first_errors_per_iter = []
+    os.makedirs("models", exist_ok=True)
 
     for exp in range (exp_num):
         print ('Experiment Number: {}'.format(exp+1))
@@ -239,6 +241,9 @@ def train (generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp
                 if i == training_size - 1: ## one full pass of the training set
                     loss_arr.append (total_loss) ## add loss val
                     first_errors.append(test(generator, lstm, device)) ## add e_i vals
+
+            filename = 'models/{}_{}_{}_{}_{}_{}'.format(lang, distrib, h_layers, h_units, exp_num, it)
+            torch.save(lstm, filename)
 
         loss_arr_per_iter.append (loss_arr)
         first_errors_per_iter.append (first_errors)
