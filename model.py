@@ -19,17 +19,11 @@ class MyLSTM(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     # Initialize the hidden and cell states of the LSTM with zeros.
-    def init_hidden(self):
-        return (torch.zeros(self.hidden_layers, 1, self.hidden_dim)), (
-            torch.zeros(self.hidden_layers, 1, self.hidden_dim))
+    def init_hidden(self, batch_size=1):
+        return [torch.zeros(self.hidden_layers, batch_size, self.hidden_dim) for _ in (1, 2)]
 
-    def forward(self, input_sequence, hidden0):
-        # Apply the LSTM layer
-        output, hidden = self.lstm(input_sequence, hidden0)
-        # Apply the linear layer
-        output = self.linear(output)
-        output = output.view(len(output), self.vocab_size + 1)
-        # Apply the sigmoid layer
-        output = self.sigmoid(output)
-
+    def forward(self, inputs, hidden0):
+        output, hidden = self.lstm(inputs, hidden0)  # Apply the LSTM layer
+        output = self.linear(output)  # Apply the linear layer
+        output = self.sigmoid(output)  # Apply the sigmoid layer
         return output, hidden

@@ -200,28 +200,18 @@ def test(generator, lstm, device):
 
     with torch.no_grad():
         for num in range(1, MAX_INT):
-            temp = generator.generate_sample(1, num, num)
-            inp, out = temp[0][0], temp[1][0]
+            inputs, outputs, _ = generator.generate_sample(1, num, num)
+            inp, out = inputs[0], outputs[0]
             input_size = len(inp)
 
-            hidden = lstm.init_hidden()
+            h0, c0 = lstm.init_hidden()
+            output, hidden = lstm(generator.lines2tensor([inp]).to(device), (h0.to(device), c0.to(device)))
+            output = output.cpu()
+            predictions = np.int_(output.numpy() >= epsilon)
+            actual = np.int_(generator.lines2tensor([out], mode="output").to(device).cpu().numpy())
 
-            letter_count = 0
-            for i in range(input_size):
-                output, hidden = lstm(generator.line2tensor_input(inp[i]).to(device),
-                                      (hidden[0].to(device), hidden[1].to(device)))
-                output = output.cpu()
-
-                prediction = np.int_(output.numpy()[0] >= epsilon)
-
-                actual = np.int_((generator.line2tensor_output(out[i]).to(device)).cpu().numpy()[0])
-
-                if np.all(np.equal(np.array(prediction), np.array(actual))):
-                    letter_count += 1
-
-            if letter_count != input_size:
+            if not np.all(np.equal(predictions, actual)):
                 first_errors.append(num)
-
                 if len(first_errors) == first_k_errors:
                     return first_errors
 
@@ -252,21 +242,16 @@ def train(generator, distrib, h_layers, h_units, inputs, outputs, n_epochs, exp_
 
         for it in range(1, n_epochs + 1):
             # total loss per epoch
-            total_loss = 0
-            for i in range(training_size):
-                lstm.zero_grad()
-                h0, c0 = lstm.init_hidden()
-                output, hidden = lstm(generator.line2tensor_input(inputs[i]).to(device), (h0.to(device), c0.to(device)))
-                target = generator.line2tensor_output(outputs[i]).to(device)
-                # loss for a single sample
-                loss = criterion(output, target)
-                loss.backward()
-                optim.step()
-                total_loss += loss.item()
-
-                if i == training_size - 1:  # one full pass of the training set
-                    loss_arr.append(total_loss)  # add loss val
-                    first_errors.append(test(generator, lstm, device))  # add e_i vals
+            lstm.zero_grad()
+            h0, c0 = lstm.init_hidden(training_size)
+            output, _ = lstm(generator.lines2tensor(inputs).to(device), (h0.to(device), c0.to(device)))
+            target = generator.lines2tensor(outputs, mode="output").to(device)
+            # loss for a single sample
+            loss = criterion(output, target)
+            loss.backward()
+            optim.step()
+            loss_arr.append(loss.item())  # add loss val
+            first_errors.append(test(generator, lstm, device))  # add e_i vals
 
         loss_arr_per_iter.append(loss_arr)
         first_errors_per_iter.append(first_errors)
